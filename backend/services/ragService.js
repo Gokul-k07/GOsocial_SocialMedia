@@ -2,24 +2,23 @@
  * ragService.js
  *
  * Orchestrates the full RAG pipeline for GOSocial AI:
- *   1. Embed the user's question (Gemini text-embedding-004)
- *   2. Vector search against public posts (MongoDB Atlas $vectorSearch)
- *   3. Build a safe, size-limited context string
- *   4. Generate a grounded answer (Gemini 1.5-flash)
- *   5. Return { answer, sources }
+ *   1. MongoDB Atlas Vector Search with Automated Embedding (voyage-4-lite)
+ *      — Atlas embeds the user's query automatically via `query` & `path: 'caption'`.
+ *      — No manual embedding call is made by this service.
+ *   2. Build a safe, size-limited context string from retrieved public posts.
+ *   3. Generate a grounded answer using Gemini LLM (gemini-3.6-flash).
+ *   4. Return { answer, sources }
  *
- * Only posts with visibility === 'anyone' are ever retrieved.
+ * SECURITY: Only posts with visibility === 'anyone' are ever retrieved.
  * No private messages, JWTs, passwords, or admin data are accessed.
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import mongoose from 'mongoose';
 import Post from '../models/Post.js';
-import { generateEmbedding } from './embeddingService.js';
 
-const LLM_MODEL = process.env.LLM_MODEL || 'gemini-1.5-flash';
+const LLM_MODEL = process.env.LLM_MODEL || 'gemini-3.6-flash';
 const VECTOR_INDEX = process.env.MONGODB_VECTOR_INDEX || 'post_embedding_index';
-const TOP_K = 6;          // number of posts to retrieve
+const TOP_K = 6;             // number of posts to retrieve
 const MAX_CONTEXT_CHARS = 3000; // hard cap on context sent to LLM
 
 const SYSTEM_INSTRUCTION = `You are GOSocial AI, an assistant that answers questions about public posts on the GOSocial social media platform.
@@ -37,7 +36,7 @@ Rules you must follow:
  * Build a safe context string from retrieved posts.
  * Truncates at MAX_CONTEXT_CHARS to avoid sending huge payloads to the LLM.
  *
- * @param {Array} posts - Lean post documents with populated author.
+ * @param {Array} posts - Post documents with populated author.
  * @returns {string}
  */
 function buildContext(posts) {
@@ -59,33 +58,27 @@ function buildContext(posts) {
 /**
  * Main RAG function.
  *
+ * Uses MongoDB Atlas Automated Embedding (voyage-4-lite) via `query` & `path: 'caption'` —
+ * Atlas embeds the question automatically using the model configured in the index.
+ *
  * @param {string} question - User's natural-language question.
  * @returns {Promise<{ answer: string, sources: Array }>}
  */
 export async function askQuestion(question) {
-  // 1. Embed the question
-  let queryVector;
-  try {
-    queryVector = await generateEmbedding(question);
-  } catch (err) {
-    console.error('[RAG] Embedding error:', err.message);
-    throw new Error('Failed to process your question. Please try again.');
-  }
-
-  // 2. MongoDB Atlas Vector Search — public posts only
+  // 1. MongoDB Atlas Vector Search — Automated Embedding via `query` & `path: 'caption'`
+  //    Atlas embeds the question using the voyage-4-lite model configured in the index.
+  //    SECURITY: filter ensures only posts with visibility === 'anyone' are returned.
   let retrievedPosts = [];
   try {
-    const collection = mongoose.connection.collection('posts');
-
     const pipeline = [
       {
         $vectorSearch: {
           index: VECTOR_INDEX,
-          path: 'embedding',
-          queryVector,
-          numCandidates: TOP_K * 10, // search broader, then filter
+          path: 'caption',               // Exact post text field indexed by Atlas autoEmbed
+          query: question,               // Atlas handles embedding automatically
+          numCandidates: TOP_K * 10,     // search broader, then filter
           limit: TOP_K,
-          filter: { visibility: 'anyone' }, // SECURITY: only public posts
+          filter: { visibility: { $eq: 'anyone' } }, // SECURITY: public posts only
         },
       },
       {
@@ -97,7 +90,7 @@ export async function askQuestion(question) {
           pipeline: [{ $project: { _id: 1, username: 1 } }],
         },
       },
-      { $unwind: { path: '$author', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$author', preserveNullAndEmptyArrays: true } },
       // Project ONLY public-safe fields — no passwords, tokens, private data
       {
         $project: {
@@ -112,13 +105,13 @@ export async function askQuestion(question) {
       },
     ];
 
-    retrievedPosts = await collection.aggregate(pipeline).toArray();
+    retrievedPosts = await Post.aggregate(pipeline);
   } catch (err) {
     console.error('[RAG] Vector search error:', err.message);
     throw new Error('Search is temporarily unavailable. Please try again.');
   }
 
-  // 3. Handle no results
+  // 2. Handle no results
   if (retrievedPosts.length === 0) {
     return {
       answer: "I couldn't find enough relevant public GOSocial posts to answer that question.",
@@ -126,10 +119,10 @@ export async function askQuestion(question) {
     };
   }
 
-  // 4. Build context
+  // 3. Build context
   const context = buildContext(retrievedPosts);
 
-  // 5. Call LLM
+  // 4. Call Gemini LLM for answer generation
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('[RAG] GEMINI_API_KEY is not configured on the server.');
@@ -155,7 +148,7 @@ export async function askQuestion(question) {
     throw new Error('The AI is temporarily unavailable. Please try again.');
   }
 
-  // 6. Build safe source attribution — only public fields
+  // 5. Build safe source attribution — only public fields
   const sources = retrievedPosts.map((p) => ({
     postId: p._id.toString(),
     content: (p.caption || '').trim(),
