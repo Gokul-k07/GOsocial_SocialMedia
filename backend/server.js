@@ -14,6 +14,7 @@ import searchRoutes from './routes/searchRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
 import { connectDB } from './config/db.js';
 
 dotenv.config();
@@ -69,6 +70,7 @@ app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

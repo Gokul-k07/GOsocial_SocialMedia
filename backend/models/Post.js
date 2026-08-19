@@ -27,6 +27,10 @@ const postSchema = new mongoose.Schema(
     mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     visibility: { type: String, enum: ['anyone', 'followers'], default: 'anyone' },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // RAG: Gemini text-embedding-004 vector (768-dim). Undefined until indexed.
+    embedding: { type: [Number], select: false, default: undefined },
+    // RAG: true if embedding generation previously failed (allows retry)
+    embeddingError: { type: Boolean, default: false },
     comments: [commentSchema],
   },
   { timestamps: true }

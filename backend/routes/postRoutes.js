@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import { protect } from '../middleware/auth.js';
 import { buildUserLookupQuery } from '../utils/userLookup.js';
+import { generateAndStoreEmbedding } from '../services/embeddingService.js';
 
 const router = express.Router();
 
@@ -157,6 +158,14 @@ router.post('/', protect, async (req, res, next) => {
     };
 
     const post = await Post.create(postData);
+
+    // RAG: Generate embedding asynchronously — post creation never fails due to this.
+    // Only embed public posts (visibility === 'anyone').
+    if (visibility === 'anyone' && caption && caption.trim().length > 0) {
+      generateAndStoreEmbedding(post._id.toString(), caption, hashtags).catch(
+        (err) => console.error('[EMBEDDING] Post create hook error:', err.message)
+      );
+    }
 
     // Trigger notifications for mentioned users
     for (const recipientId of mentionUserIds) {

@@ -12,6 +12,7 @@ import MessagesPage from './pages/MessagesPage'
 import NotificationsPage from './pages/NotificationsPage'
 import BookmarksPage from './pages/BookmarksPage'
 import SettingsPage from './pages/SettingsPage'
+import AIPage from './pages/AIPage'
 import { ToastProvider } from './components/ToastProvider'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { NotificationsProvider } from './context/NotificationContext'
@@ -53,6 +54,7 @@ function AppRoutes() {
           <Route path="/bookmarks" element={<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}><BookmarksPage /></motion.div>} />
           <Route path="/settings" element={<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}><SettingsPage /></motion.div>} />
           <Route path="/admin" element={<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}><AdminPage /></motion.div>} />
+          <Route path="/ai" element={<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}><AIPage /></motion.div>} />
         </Route>
         <Route path="*" element={<div className="page-card">404 · This page does not exist.</div>} />
       </Routes>
